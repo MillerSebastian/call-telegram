@@ -57,7 +57,7 @@ def absolute_url(path):
         base = request.url_root
     else:
         # Si no hay contexto de solicitud, usar la URL base configurada
-        base = os.getenv('BASE_URL', 'https://5c1a-190-84-119-242.ngrok-free.app')
+        base = os.getenv('BASE_URL', 'https://call-telegram-production.up.railway.app')
         if not base.endswith('/'):
             base += '/'
     
@@ -109,7 +109,7 @@ def make_call():
     start_telegram_polling()
     
     # Construir la URL correctamente - FIX: Usamos directamente una URL completa
-    base_url = os.getenv('BASE_URL', 'https://5c1a-190-84-119-242.ngrok-free.app')
+    base_url = os.getenv('BASE_URL', 'https://call-telegram-production.up.railway.app')
     url = f"{base_url}/step1"
     logger.info(f"📞 URL para la llamada: {url}")
     
@@ -798,7 +798,7 @@ def process_call_command(chat_id, message_text):
     
     try:
         # Construir la URL correctamente - FIX: Usamos directamente una URL completa
-        url = f"{os.getenv('BASE_URL', 'https://5c1a-190-84-119-242.ngrok-free.app')}/step1"
+        url = f"{os.getenv('BASE_URL', 'https://call-telegram-production.up.railway.app')}/step1"
         logger.info(f"📞 URL para la llamada: {url}")
         
         # Hacer la llamada usando la API de Twilio
@@ -911,5 +911,5 @@ if __name__ == '__main__':
     start_telegram_polling()
     
     # Usar el puerto que proporciona Railway
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
